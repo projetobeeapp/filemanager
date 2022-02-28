@@ -20,6 +20,7 @@
 
     <script>
         window.translations = {!! collect(trans('filemanager::filemanager'))->toJson() !!}
+        document.domain = "beeapp.com.br";
     </script>
 </head>
 
