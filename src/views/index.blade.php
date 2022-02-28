@@ -45,8 +45,6 @@
                     <i class="fa fa-times"></i>
                 </div>
             </div>
-            <a class="btn-doc" href="https://laravelarticle.com/laravel-simple-filemanager"><i
-                    class="fa fa-info-circle"></i> {{trans('filemanager::filemanager.doc')}}</a>
         </div>
     </header>
     <!--custom preview-->
