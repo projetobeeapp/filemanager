@@ -8,6 +8,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Validator;
 
 
@@ -24,7 +25,7 @@ class FilemanagerController extends Controller
     {
         $this->fields = ['id', 'name', 'ext', 'file_size', 'absolute_url', 'extra', 'created_at', 'updated_at'];
         $this->orderTypes = ['asc', 'desc'];
-        $this->basePath = public_path('filemanager/uploads');
+        $this->basePath = ('uploaded');
         $this->baseUrl = url('filemanager/uploads');
         $this->config = config('filemanager');
         $this->imageFormat = ['jpg', 'jpeg', 'png', 'gif', 'webp'];
@@ -136,13 +137,17 @@ class FilemanagerController extends Controller
             (new SimpleImage())->fromFile($fromFile)
                 ->toFile($newFile, "image/$convertExt");
 
-            File::delete($fromFile);
+            \Storage::disk("digitalocean")->delete($fromFile);
+
+            //File::delete($fromFile);
 
             //delete thumb and recreate new thumb
-            File::delete($this->basePath . '/thumbs/' . $name);
+            \Storage::disk("digitalocean")->delete($this->basePath . '/thumbs/' . $name);
+            //File::delete($this->basePath . '/thumbs/' . $name);
             $this->makeThumb($newFile);
 
-            $fileSizeInByte = File::size($newFile);
+            $fileSizeInByte = \Storage::disk("digitalocean")->size($newFile);
+            //$fileSizeInByte = File::size($newFile);
             $data = Filemanager::find($id);
 
             $data->update([
@@ -181,13 +186,15 @@ class FilemanagerController extends Controller
             $fromName = $this->basePath . '/' . $oldData->name;
             $toName = $this->basePath . '/' . $finalName;
 
-            File::move($fromName, $toName);
+            \Storage::disk("digitalocean")->move($fromName, $toName);
+            //File::move($fromName, $toName);
 
             $imageExtensions = ['png', 'jpg', 'gif', 'jpeg', 'webp'];
             if (in_array($oldData->ext, $imageExtensions)) {
                 $fromThumb = $this->basePath . '/thumbs/' . $oldData->name;
                 $toThumb = $this->basePath . '/thumbs/' . $finalName;
-                File::move($fromThumb, $toThumb);
+                \Storage::disk("digitalocean")->move($fromThumb, $toThumb);
+                //File::move($fromThumb, $toThumb);
             }
 
 
@@ -210,18 +217,19 @@ class FilemanagerController extends Controller
 
     public function makeThumb($sourcePath)
     {
-        $filename = basename($sourcePath);
-        $pathToSave = $this->basePath . '/thumbs';
 
-        if (!file_exists($pathToSave)) {
-            mkdir($pathToSave, 0777, true);
-        }
+        // Get File content
+        $filename = basename($sourcePath);
+        $content = Storage::disk('digitalocean')->get($sourcePath);
+        $pathToSave = $this->basePath . '/thumbs';
 
         $savePathWithName = $pathToSave . '/' . $filename;
 
-        (new SimpleImage())->fromFile($sourcePath)
+        $file = (new SimpleImage())->fromString($content)
             ->resize(40, 40)
-            ->toFile($savePathWithName);
+            ->toString();
+
+        Storage::disk('digitalocean')->put($savePathWithName,$file);
 
 
     }
@@ -279,7 +287,7 @@ class FilemanagerController extends Controller
 
         try {
             //duplicate check and rename if exist
-            if (File::exists($filePath)) {
+            if (\Storage::disk("digitalocean")->exists($filePath)) {
                 $ext = isset($pathInfo['extension']) ? ('.' . $pathInfo['extension']) : '';
                 // Look for a number before the extension; add one if there isn't already
                 if (preg_match('/(.*?)(\d+)$/', $pathInfo['filename'], $match)) {
@@ -296,7 +304,7 @@ class FilemanagerController extends Controller
                 // doesn't exist
                 do {
                     $fileName = $base . ++$number . $ext;
-                } while (File::exists($this->basePath . '/' . $fileName));
+                } while (\Storage::disk("digitalocean")->exists($this->basePath."/".$fileName));
             }
         } catch (\Exception $e) {
             $this->handleRollback($e, $fileName);
@@ -306,13 +314,18 @@ class FilemanagerController extends Controller
             try {
                 $savePathWithName = $this->basePath . '/' . $fileName;
 
-                (new SimpleImage())->fromFile($photo)
+                // Save Image
+                $imageStr = (new SimpleImage())->fromFile($photo)
                     ->resize($defaultWidth)
-                    ->toFile($savePathWithName, null, $imageQuality);
+                    ->toString(null, $imageQuality);
 
-                $fileSizeInByte = File::size($savePathWithName);
+                Storage::disk('digitalocean')->put($savePathWithName,$imageStr);
 
-                list($width, $height) = getimagesize($savePathWithName);
+                $fileSizeInByte = \Storage::disk("digitalocean")->size($savePathWithName);
+                //$fileSizeInByte = File::size($savePathWithName);
+
+                // Create image from String
+                list($width, $height) = getimagesizefromstring($imageStr);
                 $extra['width'] = $width;
                 $extra['height'] = $height;
 
@@ -322,7 +335,8 @@ class FilemanagerController extends Controller
             }
 
         } else {
-            $photo->move($this->basePath, $fileName);
+            // Save another file
+            Storage::disk('digitalocean')->putFileAs($this->basePath,$photo, $fileName);
         }
 
 
@@ -367,9 +381,11 @@ class FilemanagerController extends Controller
     {
         try {
             //delete main file
-            File::delete($this->basePath . '/' . $fileName);
+            \Storage::disk("digitalocean")->delete($this->basePath . '/' . $fileName);
+            //File::delete($this->basePath . '/' . $fileName);
             //delete thumb
-            File::delete($this->basePath . '/thumbs/' . $fileName);
+            \Storage::disk("digitalocean")->delete($this->basePath . '/thumbs/' . $fileName);
+            //File::delete($this->basePath . '/thumbs/' . $fileName);
 
             return true;
         } catch (\Exception $e) {
@@ -392,7 +408,7 @@ class FilemanagerController extends Controller
             ->where('user_id', $userId);
 
         if ($query->count()) {
-            if (File::exists($this->basePath . '/' . $data->name)) {
+            if (\Storage::disk("digitalocean")->exists($this->basePath . '/' . $data->name)) {
                 try {
                     $this->deleteFile($data->name);
                     //delete records from db
